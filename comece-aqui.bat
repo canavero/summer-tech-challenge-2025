@@ -23,17 +23,17 @@ echo  Bem-vindo(a) ao LocPay Tech Challenge
 echo.
 echo Escolha qual template voce deseja usar:
 echo.
-echo 1) NestJS + Prisma + SQLite
-echo 2) ExpressJS + SQLite
+echo 1^) NestJS + Prisma + SQLite
+echo 2^) ExpressJS + SQLite
 echo.
 
 set /p choice=Digite o numero da sua escolha [1-2]: 
 echo.
 
 if "%choice%"=="1" (
-    set SELECTED=nestjs-template
+    set "SELECTED=nestjs-template"
 ) else if "%choice%"=="2" (
-    set SELECTED=express-template
+    set "SELECTED=express-template"
 ) else (
     echo Opcao invalida. Execute novamente e escolha 1 ou 2.
     pause
@@ -56,15 +56,16 @@ for %%d in (nestjs-template express-template) do (
 :: Move os arquivos do template escolhido para a raiz, se a pasta existir
 if exist "%SELECTED%" (
     echo Movendo arquivos de %SELECTED% para a raiz...
-    move "%SELECTED%\*" . >nul 2>&1
-    for %%f in ("%SELECTED%\.*") do (
-        if not "%%f"=="%SELECTED%\." if not "%%f"=="%SELECTED%\.." move "%%f" . >nul 2>&1
+    pushd "%SELECTED%"
+    for /f "delims=" %%A in ('dir /b /a') do (
+        move "%%A" "..\" >nul
     )
+    popd
     rmdir /s /q "%SELECTED%"
 )
 
 :: Define o arquivo de guia
-set MD_SELECTED=%SELECTED%-guia.md
+set "MD_SELECTED=%SELECTED%-guia.md"
 
 echo.
 echo Configuracao concluida!
