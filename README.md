@@ -192,3 +192,91 @@ Assunto: `[Summer Job 2025] Dúvida Case Técnico`
 
 **Boa sorte!** 💙
 Equipe LocPay Tech
+
+
+# ============================================================================
+# PASSO 1: DESTRUIR INFRAESTRUTURA
+# ============================================================================
+cd C:\Users\enzou\case_locpay\summer-tech-challenge-2025\infra
+
+terraform destroy
+# Digite: yes
+
+# Aguardar ~5-10 minutos para tudo ser deletado
+
+# ============================================================================
+# PASSO 2: RECRIAR INFRAESTRUTURA
+# ============================================================================
+
+terraform apply
+# Digite: yes
+
+# Aguardar ~10-15 minutos (RDS é demorado)
+
+# ============================================================================
+# PASSO 3: PUSH DA IMAGEM DOCKER
+# ============================================================================
+cd ..
+
+# Login no ECR
+$AWS_ACCOUNT_ID = aws sts get-caller-identity --query Account --output text
+aws ecr get-login-password --region sa-east-1 | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.sa-east-1.amazonaws.com"
+
+# Build, tag e push
+docker build -t locpay-api:latest .
+$ECR_URL = "$AWS_ACCOUNT_ID.dkr.ecr.sa-east-1.amazonaws.com/locpay"
+docker tag locpay-api:latest "${ECR_URL}:latest"
+docker push "${ECR_URL}:latest"
+
+# ============================================================================
+# PASSO 4: CORRIGIR SENHA DO RDS
+# ============================================================================
+
+# Aguardar RDS ficar "available"
+Write-Host "`nAguardando RDS...`n" -ForegroundColor Yellow
+$status = ""
+while ($status -ne "available") {
+    $status = (aws rds describe-db-instances --db-instance-identifier locpay-db --region sa-east-1 --query 'DBInstances[0].DBInstanceStatus' --output text)
+    Write-Host "Status: $status" -ForegroundColor Cyan
+    if ($status -ne "available") { Start-Sleep -Seconds 30 }
+}
+
+# Obter senha real do RDS
+$RDS_SECRET_ARN = aws secretsmanager list-secrets --region sa-east-1 --query "SecretList[?contains(Name, 'rds!')].ARN" --output text
+$NEW_PASSWORD = (aws secretsmanager get-secret-value --secret-id $RDS_SECRET_ARN --region sa-east-1 --query SecretString --output text | ConvertFrom-Json).password
+
+Write-Host "`nSenha do RDS: $NEW_PASSWORD`n" -ForegroundColor Green
+
+# Atualizar secret da aplicação
+aws secretsmanager update-secret --secret-id locpay-db-connection --region sa-east-1 --secret-string "{`"username`":`"locpayuser`",`"password`":`"$NEW_PASSWORD`"}"
+
+# ============================================================================
+# PASSO 5: FORCE DEPLOYMENT
+# ============================================================================
+
+aws ecs update-service --cluster locpay-cluster --service locpay-service --force-new-deployment --region sa-east-1
+
+# Aguardar ~3 minutos
+Start-Sleep -Seconds 180
+
+# ============================================================================
+# PASSO 6: TESTAR
+# ============================================================================
+
+cd infra
+$ALB_URL = terraform output -raw alb_dns_name
+cd ..
+
+Write-Host "`nTestando API...`n" -ForegroundColor Cyan
+
+# Health check
+Invoke-RestMethod -Uri "http://$ALB_URL/health"
+
+# Criar receiver
+Invoke-RestMethod -Uri "http://$ALB_URL/receivers" -Method POST -Body '{"name":"João Silva"}' -ContentType "application/json"
+
+# Listar receivers
+Invoke-RestMethod -Uri "http://$ALB_URL/receivers"
+
+Write-Host "`n✅ Deploy completo!`n" -ForegroundColor Green
+Write-Host "App URL: http://$ALB_URL`n" -ForegroundColor Yellow
